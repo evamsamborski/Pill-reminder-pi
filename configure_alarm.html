@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Configure Device Alarms</title>
+    <style>
+        .nav-panel {
+            display: flex;
+            gap: 20px;
+            padding: 14px 30px;
+            background: #a57cf7;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 2px 8px #c296e690;
+        }
+        .nav-panel a {
+            text-decoration: none;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            padding: 7px 18px;
+            border-radius: 5px;
+            transition: background 0.17s;
+        }
+        .nav-panel a:hover {
+            background: #814ad2;
+        }
+        body { font-family: Arial, sans-serif; background: #f5f3fb; }
+        .container { background: white; margin: 40px auto; padding: 33px 60px; border-radius: 12px; max-width: 420px; box-shadow: 0 2px 10px #a57cf770; }
+        h1 { color: #7224ab;}
+        #alarmList li { margin: 10px 0; }
+        .delete-btn { background: #f44336; border: none; color: white; margin-left: 8px; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <nav class="nav-panel">
+        <a href="testtt.html">Dashboard</a>
+        <a href="add_user.html">Add User</a>
+        <a href="configure_alarm.html">Configure Alarm</a>
+        <a href="add_medication.html">Add Medication</a>
+        <a href="take_pill.html">Take Pill</a>
+    </nav>
+
+    <div class="container">
+        <h1>Alarm Scheduler</h1>
+        <label>User:
+            <select id="userDropdown" required></select>
+        </label><br>
+        <label>Time (24hr): <input type="time" id="alarmTime"></label>
+        <button id="addAlarmBtn">Add Alarm</button>
+        <h2>Scheduled Alarms</h2>
+        <ul id="alarmList"></ul>
+    </div>
+<script>
+const apiBaseUrl = 'http://127.0.0.1:5000';  // Update to your backend if needed
+
+const alarmInput = document.getElementById('alarmTime');
+const addAlarmBtn = document.getElementById('addAlarmBtn');
+const alarmList = document.getElementById('alarmList');
+const userDropdown = document.getElementById('userDropdown');
+
+// Populate user dropdown at load
+async function populateUsers() {
+    const res = await fetch(`${apiBaseUrl}/users`);
+    const users = await res.json();
+    userDropdown.innerHTML = '';
+    users.forEach(user => {
+        let opt = document.createElement('option');
+        opt.value = user.name;
+        opt.text = user.name;
+        userDropdown.add(opt);
+    });
+}
+populateUsers();
+
+// Poll every 30 seconds for any "now" alarm -- no changes
+let lastTriggeredTime = null;
+if (window.Notification && Notification.permission !== "granted") {
+    Notification.requestPermission();
+}
+setInterval(async () => {
+    try {
+        const res = await fetch('http://127.0.0.1:5000/alarms');
+        const alarms = await res.json();
+        const now = new Date();
+        const nowStr = now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false});
+        alarms.forEach(alarm => {
+            if (alarm.time === nowStr && lastTriggeredTime !== nowStr) {
+                alert("ALARM! It's " + nowStr);
+                if (window.Notification && Notification.permission === "granted") {
+                    new Notification("Pill Alarm", { body: `It's ${nowStr}! Time for your medication.` });
+                }
+                const alarmAudio = new Audio('alarm.mp3');
+                alarmAudio.play();
+                lastTriggeredTime = nowStr;
+            }
+        });
+    } catch (e) {
+        console.error("Alarm poll failed:", e);
+    }
+}, 30000);
+
+addAlarmBtn.onclick = async () => {
+    const time = alarmInput.value;
+    const userName = userDropdown.value;
+    if (!userName) { alert('Select a user!'); return; }
+    if (!time) { alert('Choose a time!'); return; }
+    try {
+        console.log("Sending POST to /alarms with time:", time, "and user:", userName);
+        const res = await fetch(`${apiBaseUrl}/alarms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userName, time })
+        });
+        if (!res.ok) {
+            alert('Failed to add alarm: ' + await res.text());
+            return;
+        }
+        alarmInput.value = "";
+        await loadAlarms();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+};
+
+async function loadAlarms() {
+    const res = await fetch(`${apiBaseUrl}/alarms`);
+    const alarms = await res.json();
+    alarmList.innerHTML = '';
+    alarms.forEach(alarm => {
+        const li = document.createElement('li');
+        li.textContent = `Alarm at ${alarm.time}`;
+        const btn = document.createElement('button');
+        btn.textContent = 'Delete';
+        btn.className = 'delete-btn';
+        btn.onclick = async () => {
+            await fetch(`${apiBaseUrl}/alarms/${alarm.id}`, { method: 'DELETE' });
+            await loadAlarms();
+        };
+        li.appendChild(btn);
+        alarmList.appendChild(li);
+    });
+}
+
+window.onload = function() {
+    populateUsers();
+    loadAlarms();
+};
+</script>
+</body>
+</html>

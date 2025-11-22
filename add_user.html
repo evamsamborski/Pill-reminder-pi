@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add User | Pill Logger</title>
+    <meta charset="utf-8"/>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #e9ddfa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .add-user-container {
+            background: white;
+            padding: 40px 50px 30px 50px;
+            border-radius: 10px;
+            box-shadow: 0px 2px 10px #c296e6;
+            text-align: center;
+        }
+        input {
+            font-size: 19px;
+            margin: 18px 0px;
+            padding: 12px 24px;
+            border-radius: 7px;
+            border: 1px solid #c296e6;
+            outline: none;
+        }
+        button {
+            font-size: 19px;
+            padding: 12px 36px;
+            border-radius: 7px;
+            background: #a57cf7;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:active { background: #8b5be9 }
+        .msg {
+            margin-top: 16px;
+            font-size: 17px;
+            color: #7224ab;
+        }
+    </style>
+</head>
+<body>
+ <nav class="nav-panel">
+  <a href="testtt.html">Dashboard</a>
+  <a href="add_user.html">Add User</a>
+  <a href="configure_alarm.html">Configure Alarm</a>
+  <a href="add_medication.html">Add Medication</a>
+  <a href="take_pill.html">Take Pill</a>
+</nav>
+
+    <div class="add-user-container">
+        <h1>Add New Person</h1>
+        <input type="text" id="userName" placeholder="Enter full name">
+        <br>
+        <button id="addUserBtn">Add User</button>
+        <div class="msg" id="msgArea"></div>
+        <br>
+        <button onclick="window.location.href='index.html'">Go Back</button>
+    </div>
+
+    <!-- Modular JavaScript -->
+    <script type="module" src="classes.js"></script>
+    <script type="module">
+import { Person, UserManager } from './classes.js';
+
+const apiBaseUrl = 'http://127.0.0.1:5000';  // Adjust as needed
+const userManager = new UserManager(apiBaseUrl);
+
+const userNameInput = document.getElementById('userName');
+const addUserBtn = document.getElementById('addUserBtn');
+const msgArea = document.getElementById('msgArea');
+
+addUserBtn.addEventListener('click', async () => {
+    const name = userNameInput.value.trim();
+    if (!name) {
+        msgArea.textContent = "Please enter a name.";
+        return;
+    }
+    const person = new Person(name);
+    msgArea.textContent = "Adding user...";
+    await userManager.addPerson(person);
+
+    msgArea.textContent = `User "${name}" added!`;
+    userNameInput.value = "";
+    // Optional: setTimeout(() => window.location.href='index.html', 1500);
+});
+</script>
+
+</body>
+</html>

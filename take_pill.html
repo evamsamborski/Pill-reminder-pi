@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Take Pill | Pill Logger</title>
+    <meta charset="utf-8"/>
+    <style>
+        .nav-panel {
+            display: flex;
+            gap: 20px;
+            padding: 14px 30px;
+            background: #a57cf7;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 2px 8px #c296e690;
+        }
+        .nav-panel a {
+            text-decoration: none;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            padding: 7px 18px;
+            border-radius: 5px;
+            transition: background 0.17s;
+        }
+        .nav-panel a:hover {
+            background: #814ad2;
+        }
+        body { font-family: Arial, sans-serif; background: #f5f3fb; }
+        .container { background: white; margin: 40px auto; padding: 33px 60px; border-radius: 12px; max-width: 420px; box-shadow: 0 2px 10px #a57cf770; }
+        h1 { color: #7224ab; }
+        .status-block { margin: 16px 0; padding: 17px; background: #efe4fc; border-radius: 9px; color: #6c3acb; }
+        button {
+            font-size: 19px;
+            padding: 10px 24px;
+            border-radius: 7px;
+            background: #a57cf7;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:active { background: #814ad2 }
+    </style>
+</head>
+<body>
+<nav class="nav-panel">
+    <a href="testtt.html">Dashboard</a>
+    <a href="add_user.html">Add User</a>
+    <a href="configure_alarm.html">Configure Alarm</a>
+    <a href="add_medication.html">Add Medication</a>
+    <a href="take_pill.html">Take Pill</a>
+</nav>
+
+<div class="container">
+    <h1>Take Pill / Medication Log</h1>
+    <form id="pillForm">
+        <label>User:
+            <select id="userDropdown" required></select>
+        </label><br>
+        <label>Medication:
+            <select id="medDropdown" required></select>
+        </label><br>
+        <button type="submit" id="takePillBtn">Log Pill Taken</button>
+    </form>
+    <div id="pillStatus" class="status-block"></div>
+    <div id="pillLogs" class="status-block"></div>
+</div>
+
+<script>
+const apiBaseUrl = 'http://127.0.0.1:5000'; // Change to Pi's IP if deploying!
+
+const userDropdown = document.getElementById('userDropdown');
+const medDropdown = document.getElementById('medDropdown');
+const pillStatus = document.getElementById('pillStatus');
+const pillLogs = document.getElementById('pillLogs');
+
+// Populate users dropdown
+async function populateUsers() {
+    const res = await fetch(`${apiBaseUrl}/users`);
+    const users = await res.json();
+    userDropdown.innerHTML = '';
+    users.forEach(user => {
+        let opt = document.createElement('option');
+        opt.value = user.name;
+        opt.text = user.name;
+        userDropdown.add(opt);
+    });
+    // After users load, load meds for the first user
+    if (users.length) {
+        await populateMeds(users[0].name);
+        await refreshStatusAndLogs(users[0].name, medDropdown.value);
+    }
+}
+populateUsers();
+
+// Populate medications for selected user
+async function populateMeds(userName) {
+    const res = await fetch(`${apiBaseUrl}/medications?userName=${encodeURIComponent(userName)}`);
+    const meds = await res.json();
+    medDropdown.innerHTML = '';
+    meds.forEach(med => {
+        let opt = document.createElement('option');
+        opt.value = med.name;
+        opt.text = `${med.name} (${med.frequencyPerDay}/day, ${med.pills_left} left, ${med.pills_per_dose || 1} per dose)`;
+        medDropdown.add(opt);
+    });
+}
+
+// Show status (pills left, next dose info, etc.) and logs
+async function refreshStatusAndLogs(userName, medName) {
+    // Pill Status
+    pillStatus.textContent = 'Loading status...';
+    const medsRes = await fetch(`${apiBaseUrl}/medications?userName=${encodeURIComponent(userName)}`);
+    const meds = await medsRes.json();
+    const med = meds.find(m => m.name === medName);
+    if (med) {
+        pillStatus.innerHTML = `<b>${userName}</b>: ${med.name}<br>
+            <b>Pills left:</b> ${med.pills_left}<br>
+            <b>Frequency per day:</b> ${med.frequencyPerDay}<br>
+            <b>Pills per dose:</b> ${med.pills_per_dose || 1}`;
+    } else {
+        pillStatus.textContent = "Medication not found.";
+    }
+
+    // Pill Logs
+    pillLogs.textContent = 'Loading log...';
+    const logsRes = await fetch(`${apiBaseUrl}/pill_logs?userName=${encodeURIComponent(userName)}`);
+    const logs = await logsRes.json();
+    if (logs.length) {
+        pillLogs.innerHTML = "<b>Pill Log:</b><br>" + logs
+            .filter(log => log.name === medName) // only for selected medication
+            .map(log => `${log.name}: ${log.taken_at.split('T')[0]} ${log.taken_at.split('T')[1].slice(0,5)}`)
+            .join('<br>');
+    } else {
+        pillLogs.innerHTML = "No pills taken yet for this medication.";
+    }
+}
+
+// Update medication dropdown and status/logs when user selection changes
+userDropdown.onchange = async () => {
+    await populateMeds(userDropdown.value);
+    await refreshStatusAndLogs(userDropdown.value, medDropdown.value);
+};
+// Update status/logs when medication changes
+medDropdown.onchange = () => {
+    refreshStatusAndLogs(userDropdown.value, medDropdown.value);
+};
+
+// Handle "Take Pill" (Log Dose)
+document.getElementById('pillForm').onsubmit = async function(event) {
+    event.preventDefault();
+    const userName = userDropdown.value;
+    const medName = medDropdown.value;
+    // Optional: any extra logic (frequency, next dose)
+    try {
+        const res = await fetch(`${apiBaseUrl}/take_pill`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ userName, medName })
+        });
+        const data = await res.json();
+        pillStatus.textContent = data.status + ' at ' + data.taken_at;
+        // Refresh logs/status
+        await refreshStatusAndLogs(userName, medName);
+    } catch (err) {
+        pillStatus.textContent = 'Error: ' + err.message;
+    }
+};
+
+// Initial load for meds/status/logs when page loads
+window.onload = async function() {
+    await populateUsers();
+    await populateMeds(userDropdown.value);
+    await refreshStatusAndLogs(userDropdown.value, medDropdown.value);
+};
+</script>
+</body>
+</html>
