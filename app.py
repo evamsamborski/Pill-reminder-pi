@@ -1,5 +1,5 @@
 # --- Imports ---
-from flask import Flask, request, jsonify
+from flask import Flask, render_template, request, jsonify
 import sqlite3
 import datetime
 import threading
@@ -157,6 +157,25 @@ def alarm_checker():
         time.sleep(60)  # Check every 60 seconds
 
 # --- Flask Routes and App Startup ---
+@app.route("/")
+def dashboard():
+    return render_template("testtt.html")  
+
+@app.route("/add_user")
+def add_user_page():
+    return render_template("add_user.html")
+
+@app.route("/configure_alarm")
+def configure_alarm_page():
+    return render_template("configure_alarm.html")
+
+@app.route("/add_medication")
+def add_medication_page():
+    return render_template("add_medication.html")
+
+@app.route("/take_pill")
+def take_pill_page():
+    return render_template("take_pill.html")
 
 # --- Users endpoints ---
 @app.route('/users', methods=['POST', 'GET'])
