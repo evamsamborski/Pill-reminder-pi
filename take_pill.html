@@ -24,10 +24,26 @@
         .nav-panel a:hover {
             background: #814ad2;
         }
-        body { font-family: Arial, sans-serif; background: #f5f3fb; }
-        .container { background: white; margin: 40px auto; padding: 33px 60px; border-radius: 12px; max-width: 420px; box-shadow: 0 2px 10px #a57cf770; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f5f3fb;
+        }
+        .container { 
+            background: white; 
+            margin: 40px auto; 
+            padding: 33px 60px; 
+            border-radius: 12px; 
+            max-width: 420px; 
+            box-shadow: 0 2px 10px #a57cf770; 
+        }
         h1 { color: #7224ab; }
-        .status-block { margin: 16px 0; padding: 17px; background: #efe4fc; border-radius: 9px; color: #6c3acb; }
+        .status-block { 
+            margin: 16px 0; 
+            padding: 17px; 
+            background: #efe4fc; 
+            border-radius: 9px; 
+            color: #6c3acb; 
+        }
         button {
             font-size: 19px;
             padding: 10px 24px;
@@ -37,17 +53,20 @@
             border: none;
             cursor: pointer;
         }
-        button:active { background: #814ad2 }
+        button:active { 
+            background: #814ad2 
+        }
     </style>
 </head>
 <body>
 <nav class="nav-panel">
-    <a href="testtt.html">Dashboard</a>
-    <a href="add_user.html">Add User</a>
-    <a href="configure_alarm.html">Configure Alarm</a>
-    <a href="add_medication.html">Add Medication</a>
-    <a href="take_pill.html">Take Pill</a>
+    <a href="/testtt">Dashboard</a>
+    <a href="/add_user">Add User</a>
+    <a href="/configure_alarm">Configure Alarm</a>
+    <a href="/add_medication">Add Medication</a>
+    <a href="/take_pill">Take Pill</a>
 </nav>
+
 
 <div class="container">
     <h1>Take Pill / Medication Log</h1>
@@ -65,7 +84,7 @@
 </div>
 
 <script>
-const apiBaseUrl = 'http://127.0.0.1:5000'; // Change to Pi's IP if deploying!
+const apiBaseUrl = ''; // Use blank for universal/portable Flask backend!
 
 const userDropdown = document.getElementById('userDropdown');
 const medDropdown = document.getElementById('medDropdown');

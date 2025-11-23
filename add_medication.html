@@ -4,59 +4,77 @@
     <title>Add Medication</title>
     <style>
         .nav-panel {
-    display: flex;
-    gap: 20px;
-    padding: 14px 30px;
-    background: #a57cf7;
-    border-radius: 0 0 10px 10px;
-    box-shadow: 0 2px 8px #c296e690;
-}
-.nav-panel a {
-    text-decoration: none;
-    color: white;
-    font-weight: bold;
-    font-size: 20px;
-    padding: 7px 18px;
-    border-radius: 5px;
-    transition: background 0.17s;
-}
-.nav-panel a:hover {
-    background: #814ad2;
-}
-
-        body { font-family: Arial, sans-serif; background: #f5f3fb; }
-        .container { background: white; margin: 40px auto; padding: 33px 60px; border-radius: 12px; max-width: 420px; box-shadow: 0 2px 10px #a57cf770; }
+            display: flex;
+            gap: 20px;
+            padding: 14px 30px;
+            background: #a57cf7;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 2px 8px #c296e690;
+        }
+        .nav-panel a {
+            text-decoration: none;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            padding: 7px 18px;
+            border-radius: 5px;
+            transition: background 0.17s;
+        }
+        .nav-panel a:hover {
+            background: #814ad2;
+        }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f5f3fb; 
+        }
+        .container { 
+            background: white; 
+            margin: 40px auto; 
+            padding: 33px 60px; 
+            border-radius: 12px; 
+            max-width: 420px; 
+            box-shadow: 0 2px 10px #a57cf770; 
+        }
         h1 { color: #7224ab;}
         #alarmList li { margin: 10px 0; }
-        .delete-btn { background: #f44336; border: none; color: white; margin-left: 8px; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+        .delete-btn { 
+            background: #f44336; 
+            border: none; 
+            color: white; 
+            margin-left: 8px; 
+            padding: 5px 10px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
     </style>
 </head>
 <body>
-     <nav class="nav-panel">
-  <a href="testtt.html">Dashboard</a>
-  <a href="add_user.html">Add User</a>
-  <a href="configure_alarm.html">Configure Alarm</a>
-  <a href="add_medication.html">Add Medication</a>
-  <a href="take_pill.html">Take Pill</a>
+    <nav class="nav-panel">
+    <a href="/testtt">Dashboard</a>
+    <a href="/add_user">Add User</a>
+    <a href="/configure_alarm">Configure Alarm</a>
+    <a href="/add_medication">Add Medication</a>
+    <a href="/take_pill">Take Pill</a>
 </nav>
+
     <h1>Add Medication</h1>
     <form id="medForm">
-   <label>User Name: <select id="userDropdown" required></select></label><br>
-    <label>Medication Name: <input type="text" id="medName" required></label><br>
-    <label>Frequency Per Day: <input type="number" id="frequency" min="1" required></label><br>
-    <label>Pills Per Dose: <input type="number" id="pillsPerDose" min="1" value="1" required></label><br>
-    <label>Pills Left (default 30): <input type="number" id="pillsLeft" min="1" value="30"></label><br>
-    <button type="submit">Add Medication</button>
-</form>
-<div id="result"></div>
+        <label>User Name: <select id="userDropdown" required></select></label><br>
+        <label>Medication Name: <input type="text" id="medName" required></label><br>
+        <label>Frequency Per Day: <input type="number" id="frequency" min="1" required></label><br>
+        <label>Pills Per Dose: <input type="number" id="pillsPerDose" min="1" value="1" required></label><br>
+        <label>Pills Left (default 30): <input type="number" id="pillsLeft" min="1" value="30"></label><br>
+        <button type="submit">Add Medication</button>
+    </form>
+    <div id="result"></div>
 
 <script>
-const apiBaseUrl = 'http://127.0.0.1:5000';
+const apiBaseUrl = ''; // Universal for Flask backend
+
 async function populateUsers() {
     const res = await fetch(`${apiBaseUrl}/users`);
     const users = await res.json();
     const dropdown = document.getElementById('userDropdown');
-    const userName = document.getElementById('userDropdown').value;
     dropdown.innerHTML = '';
     users.forEach(user => {
         let opt = document.createElement('option');
@@ -69,7 +87,7 @@ populateUsers();
 
 document.getElementById('medForm').onsubmit = async function(event) {
     event.preventDefault();
-    const userName = document.getElementById('userDropdown').value; // <-- FIXED HERE!
+    const userName = document.getElementById('userDropdown').value;
     const medName = document.getElementById('medName').value;
     const frequency = document.getElementById('frequency').value;
     const pillsPerDose = document.getElementById('pillsPerDose').value || 1;
@@ -93,7 +111,6 @@ document.getElementById('medForm').onsubmit = async function(event) {
         document.getElementById('result').textContent = 'Error adding medication: ' + e;
     }
 };
-
 </script>
 </body>
 </html>

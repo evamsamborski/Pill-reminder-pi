@@ -45,30 +45,30 @@
     </style>
 </head>
 <body>
- <nav class="nav-panel">
-  <a href="testtt.html">Dashboard</a>
-  <a href="add_user.html">Add User</a>
-  <a href="configure_alarm.html">Configure Alarm</a>
-  <a href="add_medication.html">Add Medication</a>
-  <a href="take_pill.html">Take Pill</a>
+<nav class="nav-panel">
+  <a href="/dashboard">Dashboard</a>
+  <a href="/add_user">Add User</a>
+  <a href="/configure_alarm">Configure Alarm</a>
+  <a href="/add_medication">Add Medication</a>
+  <a href="/take_pill">Take Pill</a>
 </nav>
 
-    <div class="add-user-container">
-        <h1>Add New Person</h1>
-        <input type="text" id="userName" placeholder="Enter full name">
-        <br>
-        <button id="addUserBtn">Add User</button>
-        <div class="msg" id="msgArea"></div>
-        <br>
-        <button onclick="window.location.href='index.html'">Go Back</button>
-    </div>
+<div class="add-user-container">
+    <h1>Add New Person</h1>
+    <input type="text" id="userName" placeholder="Enter full name">
+    <br>
+    <button id="addUserBtn">Add User</button>
+    <div class="msg" id="msgArea"></div>
+    <br>
+    <button onclick="window.location.href='/dashboard'">Go Back</button>
+</div>
 
-    <!-- Modular JavaScript -->
-    <script type="module" src="classes.js"></script>
-    <script type="module">
+<!-- Modular JavaScript -->
+<script type="module" src="{{ url_for('static', filename='classes.js') }}"></script>
+<script type="module">
 import { Person, UserManager } from './classes.js';
 
-const apiBaseUrl = 'http://127.0.0.1:5000';  // Adjust as needed
+const apiBaseUrl = '';  // Adjust as needed
 const userManager = new UserManager(apiBaseUrl);
 
 const userNameInput = document.getElementById('userName');
@@ -87,9 +87,8 @@ addUserBtn.addEventListener('click', async () => {
 
     msgArea.textContent = `User "${name}" added!`;
     userNameInput.value = "";
-    // Optional: setTimeout(() => window.location.href='index.html', 1500);
+    // Optional: setTimeout(() => window.location.href='/dashboard', 1500);
 });
 </script>
-
 </body>
 </html>
