@@ -45,8 +45,9 @@
     </style>
 </head>
 <body>
+<!-- Navigation block, edit URLs as needed -->
 <nav class="nav-panel">
-  <a href="/dashboard">Dashboard</a>
+  <a href="/testtt">Dashboard</a>
   <a href="/add_user">Add User</a>
   <a href="/configure_alarm">Configure Alarm</a>
   <a href="/add_medication">Add Medication</a>
@@ -63,13 +64,9 @@
     <button onclick="window.location.href='/dashboard'">Go Back</button>
 </div>
 
-<!-- Modular JavaScript -->
-<script type="module" src="{{ url_for('static', filename='classes.js') }}"></script>
-<script type="module">
-import { Person, UserManager } from './classes.js';
-
-const apiBaseUrl = '';  // Adjust as needed
-const userManager = new UserManager(apiBaseUrl);
+<!-- Direct JS for add-user, no import/module required -->
+<script>
+const apiBaseUrl = '';  // Flask handles route automatically
 
 const userNameInput = document.getElementById('userName');
 const addUserBtn = document.getElementById('addUserBtn');
@@ -81,13 +78,27 @@ addUserBtn.addEventListener('click', async () => {
         msgArea.textContent = "Please enter a name.";
         return;
     }
-    const person = new Person(name);
     msgArea.textContent = "Adding user...";
-    await userManager.addPerson(person);
-
-    msgArea.textContent = `User "${name}" added!`;
-    userNameInput.value = "";
-    // Optional: setTimeout(() => window.location.href='/dashboard', 1500);
+    try {
+        const res = await fetch(apiBaseUrl + "/users", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name}),
+        });
+        const data = await res.json();
+        if (res.ok && data && data.name) {
+            msgArea.textContent = `User "${data.name}" added!`;
+            userNameInput.value = "";
+        } else if (data && data.error && data.error.includes('UNIQUE')) {
+            msgArea.textContent = "That user already exists.";
+        } else if (data && data.error) {
+            msgArea.textContent = `Error: ${data.error}`;
+        } else {
+            msgArea.textContent = "Error adding user.";
+        }
+    } catch (err) {
+        msgArea.textContent = "Server error: " + err.message;
+    }
 });
 </script>
 </body>
