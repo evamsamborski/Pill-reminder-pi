@@ -6,7 +6,7 @@ import threading
 import time
 import sys
 
-# --- Flask & DB Setup (example only) ---
+# --- Flask & DB Setup ---
 app = Flask(__name__)
 
 # --- CORS: Manual Header if flask_cors not installed ---
@@ -44,8 +44,7 @@ def init_db():
         pills_per_dose INTEGER DEFAULT 1,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
-''')
-
+    ''')
     cur.execute('''
         CREATE TABLE IF NOT EXISTS pill_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,8 +62,7 @@ def init_db():
         time TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
-''')
-
+    ''')
     conn.commit()
     conn.close()
 
@@ -78,20 +76,29 @@ try:
 except ImportError:
     print("RPi.GPIO not available. Button press will be simulated.")
 
-BUTTON_PIN = 17  # Set your pin number here
+BUTTON_PIN = 17   # Set your button pin here
+BUZZER_PIN = 18   # Set your buzzer pin here
 
 if PI_AVAILABLE:
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
 
 # --- Helper/Logic Functions ---
+
+def start_buzzer():
+    if PI_AVAILABLE:
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+
+def stop_buzzer():
+    if PI_AVAILABLE:
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
 
 def get_due_medication():
     now = datetime.datetime.now()
     now_str = now.strftime('%H:%M')
     conn = db_connection()
     cur = conn.cursor()
-    # Find the user's medication scheduled for now
     med = cur.execute(
         '''SELECT m.id, m.name, m.user_id
            FROM medications m
@@ -102,7 +109,6 @@ def get_due_medication():
     ).fetchone()
     conn.close()
     return med
-
 
 def log_pill_backend():
     med = get_due_medication()
@@ -115,14 +121,11 @@ def log_pill_backend():
     conn = db_connection()
     cur = conn.cursor()
     now = datetime.datetime.now().isoformat()
-    # Get quantity to decrement
     pills_per_dose = cur.execute('SELECT pills_per_dose FROM medications WHERE id=?', (med_id,)).fetchone()['pills_per_dose']
-    # Log pill
     cur.execute(
         'INSERT INTO pill_logs (user_id, med_id, taken_at) VALUES (?, ?, ?)', 
         (user_id, med_id, now)
     )
-    # DECREMENT by actual pills_per_dose!
     cur.execute('UPDATE medications SET pills_left = pills_left - ? WHERE id=?', (pills_per_dose, med_id))
     conn.commit()
     conn.close()
@@ -133,9 +136,10 @@ def button_listener():
     while True:
         if PI_AVAILABLE:
             if GPIO.input(BUTTON_PIN) == GPIO.LOW:
-                print("Button pressed! Logging pill...")
+                print("Button pressed! Logging pill and stopping buzzer...")
+                stop_buzzer()            # Stop buzzer when button pressed
                 log_pill_backend()
-                time.sleep(1)  # Debounce: wait a second to avoid multiple triggers
+                time.sleep(1)            # Debounce
         else:
             input("Simulate button press: press ENTER to log pill (Ctrl+C to exit)...")
             print("Simulated button pressed. Logging pill...")
@@ -147,16 +151,16 @@ def alarm_checker():
         now = datetime.datetime.now().strftime('%H:%M')
         conn = db_connection()
         cur = conn.cursor()
-        # Check for all alarms matching the current time
         alarms = cur.execute('SELECT id, time FROM alarms WHERE time=?', (now,)).fetchall()
         if alarms:
             for alarm_row in alarms:
                 print(f"ALARM! It's now {now}. (Simulated trigger for alarm ID {alarm_row['id']})")
-                # You can add any Pi-specific/LED/buzzer code here
+                start_buzzer()         # Start buzzer when alarm goes off
         conn.close()
         time.sleep(60)  # Check every 60 seconds
 
 # --- Flask Routes and App Startup ---
+
 @app.route("/")
 def dashboard():
     return render_template("testtt.html")  
@@ -177,14 +181,12 @@ def add_medication_page():
 def take_pill_page():
     return render_template("take_pill.html")
 
-# --- Users endpoints ---
 @app.route('/users', methods=['POST', 'GET'])
 def users():
     conn = db_connection()
     cur = conn.cursor()
     if request.method == 'POST':
         name = request.json.get('name')
-        #printing for testing:
         print(f"Adding user: {name}")
         cur.execute('INSERT OR IGNORE INTO users (name) VALUES (?)', (name,))
         conn.commit()
@@ -196,7 +198,6 @@ def users():
         conn.close()
         return jsonify([dict(u) for u in users])
 
-# --- Medications endpoints ---
 @app.route('/medications', methods=['POST', 'GET'])
 def medications():
     conn = db_connection()
@@ -206,7 +207,7 @@ def medications():
         med_name = request.json.get('name')
         freq = request.json.get('frequencyPerDay')
         pills_left = request.json.get('pills_left', 30)
-        pills_per_dose = request.json.get('pills_per_dose', 1)  # <-- Get value from frontend
+        pills_per_dose = request.json.get('pills_per_dose', 1)
         user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
         if not user:
             conn.close()
@@ -214,7 +215,7 @@ def medications():
         user_id = user['id']
         cur.execute(
             'INSERT INTO medications (user_id, name, frequencyPerDay, pills_left, pills_per_dose) VALUES (?, ?, ?, ?, ?)',
-            (user_id, med_name, freq, pills_left, pills_per_dose)  # <-- Pass it here
+            (user_id, med_name, freq, pills_left, pills_per_dose)
         )
         conn.commit()
         conn.close()
@@ -235,7 +236,6 @@ def medications():
         conn.close()
         return jsonify([dict(m) for m in meds])
 
-# --- Pill logs by user ---
 @app.route('/pill_logs', methods=['GET'])
 def pill_logs():
     userName = request.args.get('userName')
@@ -256,7 +256,6 @@ def pill_logs():
     conn.close()
     return jsonify([dict(row) for row in logs])
 
-# --- Alarms endpoints ---
 @app.route('/alarms', methods=['POST', 'GET'])
 def alarms():
     conn = db_connection()
@@ -289,9 +288,7 @@ def delete_alarm(alarm_id):
 @app.route('/take_pill', methods=['POST', 'OPTIONS'])
 def take_pill():
     if request.method == 'OPTIONS':
-        # Handle CORS preflight
         return ('', 204)
-    # --- Your existing POST logic ---
     data = request.json
     userName = data.get('userName')
     med_name = data.get('medName')
@@ -337,10 +334,7 @@ def alarming_on():
     print('ALARM ON')
     return jsonify({'status': 'Alarm triggered'})
 
-
-# --- Start background threads & Flask app ---
 if __name__ == '__main__':
-    # --- Start Button Listening Thread ---
     threading.Thread(target=button_listener, daemon=True).start()
     threading.Thread(target=alarm_checker, daemon=True).start()
     print("Starting Flask app!")
