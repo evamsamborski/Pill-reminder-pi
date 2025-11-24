@@ -97,7 +97,13 @@
         </div>
         <div id="medList"></div>
         </div>
+        <div class="section">
+    <h2>Recent Pill Logs</h2>
+    <div id="pillLogs"></div>
+</div>
+
     </div>
+
 
     <script>
     import { Medication, Person, UserManager } from './classes.js';
@@ -234,6 +240,27 @@
     };
     </script>
     <script type="module" src="classes.js"></script>
+    <script>
+function updatePillLogs() {
+  // TODO: Customize 'YOUR_USER_NAME' as needed, or use currently logged-in user
+  fetch('/pill_logs?userName=YOUR_USER_NAME')
+    .then(response => response.json())
+    .then(logs => {
+      const el = document.getElementById('pillLogs');
+      el.innerHTML =
+        logs.length === 0
+          ? '<em>No pills logged yet.</em>'
+          : '<ul>' +
+            logs.map(log =>
+                `<li>${log.taken_at}: <b>${log.name}</b></li>`)
+            .join('') + '</ul>';
+    });
+}
+// Update every 10 seconds
+setInterval(updatePillLogs, 10000);
+updatePillLogs();
+</script>
+
     <script type="module" src="yourScript.js">
         import { Medication, Person, UserManager } from './classes.js';
 
@@ -245,6 +272,33 @@
         const frequencyInput = document.getElementById('frequency');
         const addMedBtn = document.getElementById('addMedBtn');
         const medListDiv = document.getElementById('medList');
+
+        userNameInput.addEventListener('input', () => {
+  updatePillLogs();
+});
+
+        function updatePillLogs() {
+  const userName = document.getElementById('userName').value.trim();
+  if (!userName) {
+    document.getElementById('pillLogs').innerHTML = '<em>Please enter or select a user to view pill logs.</em>';
+    return;
+  }
+  fetch(`/pill_logs?userName=${encodeURIComponent(userName)}`)
+    .then(response => response.json())
+    .then(logs => {
+      const el = document.getElementById('pillLogs');
+      el.innerHTML =
+        logs.length === 0
+          ? '<em>No pills logged yet for this user.</em>'
+          : '<ul>' +
+            logs.map(log =>
+                `<li>${log.taken_at}: <b>${log.name}</b></li>`)
+            .join('') + '</ul>';
+    });
+}
+
+// Poll every 10 seconds for pill logs
+setInterval(updatePillLogs, 10000);
 
         userNameInput.addEventListener('blur', () => {
             loadAndDisplayMeds(userNameInput.value.trim());
