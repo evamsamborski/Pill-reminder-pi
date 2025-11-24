@@ -76,7 +76,7 @@ try:
 except ImportError:
     print("RPi.GPIO not available. Button press will be simulated.")
 
-BUTTON_PIN = 11   # Set your button pin here
+BUTTON_PIN = 17   # Set your button pin here
 BUZZER_PIN = 18   # Set your buzzer pin here
 
 if PI_AVAILABLE:
