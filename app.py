@@ -24,7 +24,7 @@ def db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- Set up tables automatically ---
+# --- Set up tables automatically (idempotent/init step) ---
 def init_db():
     conn = db_connection()
     cur = conn.cursor()
@@ -35,15 +35,15 @@ def init_db():
         )
     ''')
     cur.execute('''
-    CREATE TABLE IF NOT EXISTS medications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        name TEXT,
-        frequencyPerDay INTEGER,
-        pills_left INTEGER DEFAULT 30,
-        pills_per_dose INTEGER DEFAULT 1,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
+        CREATE TABLE IF NOT EXISTS medications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            name TEXT,
+            frequencyPerDay INTEGER,
+            pills_left INTEGER DEFAULT 30,
+            pills_per_dose INTEGER DEFAULT 1,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
     ''')
     cur.execute('''
         CREATE TABLE IF NOT EXISTS pill_logs (
@@ -56,17 +56,18 @@ def init_db():
         )
     ''')
     cur.execute('''
-    CREATE TABLE IF NOT EXISTS alarms (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        time TEXT NOT NULL,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
+        CREATE TABLE IF NOT EXISTS alarms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            med_id INTEGER,
+            time TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(med_id) REFERENCES medications(id)
+        )
     ''')
     conn.commit()
     conn.close()
-
-init_db()
+init_db()  # <--- Ensure DB is initialized at app start
 
 # --- Platform Detection & GPIO Setup ---
 PI_AVAILABLE = False
@@ -76,94 +77,99 @@ try:
 except ImportError:
     print("RPi.GPIO not available. Button press will be simulated.")
 
-BUTTON_PIN = 17   # Set your button pin here
-BUZZER_PIN = 18   # Set your buzzer pin here
+# Assignments for 5 buttons, 5 LEDs, 2 buzzers (BCM pin numbers)
+BUTTON_PINS = [17, 27, 22, 10, 9]    # Each button for one medication
+LED_PINS = [4, 5, 6, 13, 19]         # Each LED for one medication
+BUZZER_PINS = [18, 23]               # Both buzzers for alarm intensity
 
 if PI_AVAILABLE:
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(BUZZER_PIN, GPIO.OUT)
+    for pin in BUTTON_PINS:
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    for pin in LED_PINS:
+        GPIO.setup(pin, GPIO.OUT)
+        GPIO.output(pin, GPIO.LOW)
+    for pin in BUZZER_PINS:
+        GPIO.setup(pin, GPIO.OUT)
+        GPIO.output(pin, GPIO.LOW)
 
-# --- Helper/Logic Functions ---
+# --- Medication/Alarm State ---
+med_alarm_active = [False] * 5
+med_alarm_context = [None] * 5 # stores alarm metadata (user_id, med_id, etc)
 
 def start_buzzer():
     if PI_AVAILABLE:
-        GPIO.output(BUZZER_PIN, GPIO.HIGH)
-
+        for pin in BUZZER_PINS:
+            GPIO.output(pin, GPIO.HIGH)
 def stop_buzzer():
     if PI_AVAILABLE:
-        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        for pin in BUZZER_PINS:
+            GPIO.output(pin, GPIO.LOW)
 
-def get_due_medication():
-    now = datetime.datetime.now()
-    now_str = now.strftime('%H:%M')
-    conn = db_connection()
-    cur = conn.cursor()
-    med = cur.execute(
-        '''SELECT m.id, m.name, m.user_id
-           FROM medications m
-           JOIN alarms a ON m.user_id = a.user_id
-           WHERE a.time = ?
-           LIMIT 1
-        ''', (now_str,)
-    ).fetchone()
-    conn.close()
-    return med
+def trigger_alarm(idx, user_id, med_id):
+    print(f"--> TRIGGER: Med {idx+1}, User {user_id}, Med {med_id}")
+    med_alarm_active[idx] = True
+    med_alarm_context[idx] = {'user_id': user_id, 'med_id': med_id}
+    if PI_AVAILABLE:
+        GPIO.output(LED_PINS[idx], GPIO.HIGH)
+        start_buzzer()
 
-def log_pill_backend():
-    med = get_due_medication()
-    if not med:
-        print("No due medication scheduled for this time.")
-        return
-    med_id = med['id']
-    user_id = med['user_id']
-    med_name = med['name']
-    conn = db_connection()
-    cur = conn.cursor()
+def clear_alarm(idx):
+    ctx = med_alarm_context[idx]
+    print(f"--> CLEAR: Med {idx+1}, User {ctx['user_id']}, Med {ctx['med_id']}")
+    med_alarm_active[idx] = False
+    med_alarm_context[idx] = None
+    if PI_AVAILABLE:
+        GPIO.output(LED_PINS[idx], GPIO.LOW)
+        stop_buzzer()
+    # Log pill to DB
     now = datetime.datetime.now().isoformat()
-    pills_per_dose = cur.execute('SELECT pills_per_dose FROM medications WHERE id=?', (med_id,)).fetchone()['pills_per_dose']
+    conn = db_connection()
+    cur = conn.cursor()
     cur.execute(
-        'INSERT INTO pill_logs (user_id, med_id, taken_at) VALUES (?, ?, ?)', 
-        (user_id, med_id, now)
+        'INSERT INTO pill_logs (user_id, med_id, taken_at) VALUES (?, ?, ?)',
+        (ctx['user_id'], ctx['med_id'], now)
     )
-    cur.execute('UPDATE medications SET pills_left = pills_left - ? WHERE id=?', (pills_per_dose, med_id))
+    # Decrement pills_left for medication (by 1 per alarm event)
+    cur.execute('UPDATE medications SET pills_left = pills_left - 1 WHERE id=?', (ctx['med_id'],))
     conn.commit()
     conn.close()
-    print(f"Pill for {med_name} logged and count decremented by {pills_per_dose} at {now}")
 
 def button_listener():
-    print("Pill button listener running...")
+    print("Pill button listener running for 5 medications...")
     while True:
         if PI_AVAILABLE:
-            if GPIO.input(BUTTON_PIN) == GPIO.LOW:
-                print("Button pressed! Logging pill and stopping buzzer...")
-                stop_buzzer()            # Stop buzzer when button pressed
-                log_pill_backend()
-                time.sleep(1)            # Debounce
+            for i, pin in enumerate(BUTTON_PINS):
+                if med_alarm_active[i] and GPIO.input(pin) == GPIO.LOW:
+                    print(f"Button {i+1} pressed! Logging pill, turning off LED & buzzers...")
+                    clear_alarm(i)
+                    time.sleep(1) # Debounce per button
         else:
-            input("Simulate button press: press ENTER to log pill (Ctrl+C to exit)...")
-            print("Simulated button pressed. Logging pill...")
-            log_pill_backend()
-        time.sleep(0.1)
+            pressed = input("Simulate button press (enter index 1-5): ")
+            i = int(pressed) - 1
+            if med_alarm_active[i]:
+                clear_alarm(i)
+        time.sleep(0.05)
 
 def alarm_checker():
     while True:
         now = datetime.datetime.now().strftime('%H:%M')
         conn = db_connection()
         cur = conn.cursor()
-        alarms = cur.execute('SELECT id, time FROM alarms WHERE time=?', (now,)).fetchall()
-        if alarms:
-            for alarm_row in alarms:
-                print(f"ALARM! It's now {now}. (Simulated trigger for alarm ID {alarm_row['id']})")
-                start_buzzer()         # Start buzzer when alarm goes off
+        # Must use separate alarms for each med/user combo
+        alarms = cur.execute('SELECT id, user_id, med_id, time FROM alarms WHERE time=?', (now,)).fetchall()
+        for alarm_row in alarms:
+            # Map the med_id (1-5) to index (0-4)
+            idx = alarm_row['med_id'] - 1
+            if 0 <= idx < 5 and not med_alarm_active[idx]:
+                trigger_alarm(idx, alarm_row['user_id'], alarm_row['med_id'])
         conn.close()
-        time.sleep(60)  # Check every 60 seconds
+        time.sleep(30)  # Check every 30 seconds
 
 # --- Flask Routes and App Startup ---
-
 @app.route("/")
 def dashboard():
-    return render_template("testtt.html")  
+    return render_template("testtt.html")
 
 @app.route("/add_user")
 def add_user_page():
@@ -181,6 +187,7 @@ def add_medication_page():
 def take_pill_page():
     return render_template("take_pill.html")
 
+# --- USER API (long-term, robust) ---
 @app.route('/users', methods=['POST', 'GET'])
 def users():
     conn = db_connection()
@@ -262,17 +269,19 @@ def alarms():
     cur = conn.cursor()
     if request.method == 'POST':
         userName = request.json.get('userName')
+        med_name = request.json.get('medName')
         time_val = request.json.get('time')
         user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
-        if not user:
+        med = cur.execute('SELECT id FROM medications WHERE name=? AND user_id=?', (med_name, user['id'])).fetchone()
+        if not user or not med:
             conn.close()
-            return jsonify({'error': 'User not found'}), 404
-        cur.execute('INSERT INTO alarms (user_id, time) VALUES (?, ?)', (user['id'], time_val))
+            return jsonify({'error': 'User or medication not found'}), 404
+        cur.execute('INSERT INTO alarms (user_id, med_id, time) VALUES (?, ?, ?)', (user['id'], med['id'], time_val))
         conn.commit()
         conn.close()
         return jsonify({'status': 'Alarm added'}), 201
     else:
-        alarms = cur.execute('SELECT id, user_id, time FROM alarms').fetchall()
+        alarms = cur.execute('SELECT id, user_id, med_id, time FROM alarms').fetchall()
         conn.close()
         return jsonify([dict(a) for a in alarms])
 
@@ -295,13 +304,10 @@ def take_pill():
     conn = db_connection()
     cur = conn.cursor()
     user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
-    if not user:
-        conn.close()
-        return jsonify({'error': 'User not found'}), 404
     med = cur.execute('SELECT id, pills_per_dose FROM medications WHERE name=? AND user_id=?', (med_name, user['id'])).fetchone()
-    if not med:
+    if not user or not med:
         conn.close()
-        return jsonify({'error': 'Medication not found'}), 404
+        return jsonify({'error': 'User or medication not found'}), 404
     pills_per_dose = med['pills_per_dose'] if 'pills_per_dose' in med.keys() else 1
     now = datetime.datetime.now().isoformat()
     cur.execute(
