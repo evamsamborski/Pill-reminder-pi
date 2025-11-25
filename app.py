@@ -80,7 +80,7 @@ except ImportError:
 # Assignments for 5 buttons, 5 LEDs, 2 buzzers (BCM pin numbers)
 BUTTON_PINS = [17, 27, 22, 10, 9]    # Each button for one medication
 LED_PINS = [4, 5, 6, 13, 19]         # Each LED for one medication
-BUZZER_PINS = [18, 23]               # Both buzzers for alarm intensity
+BUZZER_PINS = [14, 15]               # Both buzzers for alarm intensity
 
 if PI_AVAILABLE:
     GPIO.setmode(GPIO.BCM)
@@ -91,7 +91,7 @@ if PI_AVAILABLE:
         GPIO.output(pin, GPIO.LOW)
     for pin in BUZZER_PINS:
         GPIO.setup(pin, GPIO.OUT)
-        GPIO.output(pin, GPIO.LOW)
+        GPIO.output(pin, GPIO.LOW)  # Make sure both buzzers are OFF at boot
 
 # --- Medication/Alarm State ---
 med_alarm_active = [False] * 5
