@@ -67,7 +67,6 @@
     <a href="/take_pill">Take Pill</a>
 </nav>
 
-
 <div class="container">
     <h1>Take Pill / Medication Log</h1>
     <form id="pillForm">
@@ -84,7 +83,7 @@
 </div>
 
 <script>
-const apiBaseUrl = ''; // Use blank for universal/portable Flask backend!
+const apiBaseUrl = ''; // Leave blank for portable Flask backend!
 
 const userDropdown = document.getElementById('userDropdown');
 const medDropdown = document.getElementById('medDropdown');
@@ -145,7 +144,7 @@ async function refreshStatusAndLogs(userName, medName) {
     const logs = await logsRes.json();
     if (logs.length) {
         pillLogs.innerHTML = "<b>Pill Log:</b><br>" + logs
-            .filter(log => log.name === medName) // only for selected medication
+            .filter(log => log.name === medName)
             .map(log => `${log.name}: ${log.taken_at.split('T')[0]} ${log.taken_at.split('T')[1].slice(0,5)}`)
             .join('<br>');
     } else {
@@ -153,12 +152,11 @@ async function refreshStatusAndLogs(userName, medName) {
     }
 }
 
-// Update medication dropdown and status/logs when user selection changes
+// Dropdown and status updating when selection changes
 userDropdown.onchange = async () => {
     await populateMeds(userDropdown.value);
     await refreshStatusAndLogs(userDropdown.value, medDropdown.value);
 };
-// Update status/logs when medication changes
 medDropdown.onchange = () => {
     refreshStatusAndLogs(userDropdown.value, medDropdown.value);
 };
@@ -168,7 +166,6 @@ document.getElementById('pillForm').onsubmit = async function(event) {
     event.preventDefault();
     const userName = userDropdown.value;
     const medName = medDropdown.value;
-    // Optional: any extra logic (frequency, next dose)
     try {
         const res = await fetch(`${apiBaseUrl}/take_pill`, {
             method: 'POST',
@@ -177,14 +174,16 @@ document.getElementById('pillForm').onsubmit = async function(event) {
         });
         const data = await res.json();
         pillStatus.textContent = data.status + ' at ' + data.taken_at;
-        // Refresh logs/status
+        // REFRESH DROPDOWN, logs AND status
+        await populateMeds(userName);
+        medDropdown.value = medName; // Preserve selection
         await refreshStatusAndLogs(userName, medName);
     } catch (err) {
         pillStatus.textContent = 'Error: ' + err.message;
     }
 };
 
-// Initial load for meds/status/logs when page loads
+// Initial load
 window.onload = async function() {
     await populateUsers();
     await populateMeds(userDropdown.value);
