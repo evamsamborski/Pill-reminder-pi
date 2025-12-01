@@ -69,14 +69,13 @@
 </head>
 <body>
     <!--Nav panel-->
-  <nav class="nav-panel">
-    <a href="/testtt">Dashboard</a>
-    <a href="/add_user">Add User</a>
-    <a href="/configure_alarm">Configure Alarm</a>
-    <a href="/add_medication">Add Medication</a>
-    <a href="/take_pill">Take Pill</a>
-</nav>
-
+    <nav class="nav-panel">
+        <a href="/testtt">Dashboard</a>
+        <a href="/add_user">Add User</a>
+        <a href="/configure_alarm">Configure Alarm</a>
+        <a href="/add_medication">Add Medication</a>
+        <a href="/take_pill">Take Pill</a>
+    </nav>
 
     <div class="container">
         <div class="section">
@@ -89,6 +88,7 @@
             <button class="on-btn" onclick="ledOn()">Turn ON</button>
             <button class="off-btn" onclick="ledOff()">Turn OFF</button>
             <div id="status"></div>
+        </div>
         <div class="section"> 
             <input type="text" id="userName" placeholder="Name">
             <input type="text" id="medName" placeholder="Medication name">
@@ -96,172 +96,14 @@
             <button id="addMedBtn">Add Medication</button>
         </div>
         <div id="medList"></div>
-        </div>
         <div class="section">
-    <h2>Recent Pill Logs</h2>
-    <div id="pillLogs"></div>
-</div>
-
+            <h2>Recent Pill Logs</h2>
+            <div id="pillLogs"></div>
+        </div>
     </div>
 
-
-    <script>
-    import { Medication, Person, UserManager } from './classes.js';
-
-    const apiBaseUrl = ''; // Adjust as needed
-
-    window.onload = function() {
-        // Prompt for starting pill count
-        let taken = parseInt(prompt("How many pills do you have?"), 10);
-        if (isNaN(taken) || taken < 0) {
-            taken = 30;
-        }
-
-        // Prompt for alarm time (allows decimal minutes)
-        let alarmMinutes = parseFloat(prompt("Set alarm for how many minutes?"));
-        if (isNaN(alarmMinutes) || alarmMinutes < 0.01) {
-            alarmMinutes = 1;
-        }
-
-        // Get DOM elements
-        const pillCountDisplay = document.getElementById('pillCount');
-        const takePillBtn = document.getElementById('takePillBtn');
-
-        pillCountDisplay.textContent = taken;
-
-        // Timer display setup
-        const timerDisplay = document.createElement('div');
-        timerDisplay.style.marginTop = '15px';
-        timerDisplay.style.fontSize = '18px';
-        timerDisplay.style.fontWeight = 'bold';
-        document.querySelector('.container').appendChild(timerDisplay);
-
-        // Timer countdown logic - NEW!
-        let secondsLeft = Math.round(alarmMinutes * 60);
-        function updateTimer() {
-            const min = Math.floor(secondsLeft / 60);
-            const sec = secondsLeft % 60;
-            timerDisplay.textContent = `Time until next medication: ${min}:${sec.toString().padStart(2, '0')} minutes`;
-            if (secondsLeft > 0) {
-                secondsLeft--;
-                setTimeout(updateTimer, 1000);
-            } else {
-                // TIMER FINISHED: show alarm message and notify Pi
-                const alarmMsg = document.createElement('div');
-                alarmMsg.textContent = "Time to take a pill!";
-                alarmMsg.style.color = 'purple';
-                alarmMsg.style.fontWeight = 'bold';
-                alarmMsg.style.fontSize = '24px';
-                document.querySelector('.container').appendChild(alarmMsg);
-
-                // Send request to Pi to blink LED
-                fetch(apiBaseUrl + '/led/blink')
-                    .then(response => response.json())
-                    .then(data => console.log(data))
-                    .catch(error => console.error('Error:', error));
-                alarm();
-            }
-        }
-        updateTimer();
-
-        // Pill counter/refill logic
-        takePillBtn.addEventListener('click', () => {
-            if (taken > 1) {
-                taken -= 1;
-                pillCountDisplay.textContent = taken;
-                fetch(apiBaseUrl + '/update', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({taken: taken})
-                })
-                .then(response => response.json())
-                .then(data => console.log(data))
-                .catch(error => console.error('Error:', error));
-            } else if (taken === 1) {
-                taken -= 1; // count now zero
-                pillCountDisplay.textContent = taken;
-
-                fetch(apiBaseUrl + '/update', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({taken: taken})
-                })
-                .then(response => response.json())
-                .then(data => console.log(data))
-                .catch(error => console.error('Error:', error));
-
-                alert('Time for a refill!');
-
-                fetch(apiBaseUrl + '/refill', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: 'Time for a refill!'})
-                })
-                .then(response => response.json())
-                .then(data => console.log(data))
-                .catch(error => console.error('Error:', error));
-            } else {
-                alert('No pills left! Time to refill.');
-            }
-        });
-
-        // LED Control functions
-        async function alarm() {
-            try {
-                const response = await fetch(apiBaseUrl + '/alarming/on');
-                const data = await response.json();
-                document.getElementById('status').innerText = data.status;
-            } catch (error) {
-                document.getElementById('status').innerText = 'Error: ' + error;
-            }
-        }
-
-        /*
-        window.ledOn = async function() {
-            try {
-                const response = await fetch(apiBaseUrl + '/led/on');
-                const data = await response.json();
-                document.getElementById('status').innerText = data.status;
-            } catch (error) {
-                document.getElementById('status').innerText = 'Error: ' + error;
-            }
-        }
-
-        window.ledOff = async function() {
-            try {
-                const response = await fetch(apiBaseUrl + '/led/off');
-                const data = await response.json();
-                document.getElementById('status').innerText = data.status;
-            } catch (error) {
-                document.getElementById('status').innerText = 'Error: ' + error;
-            }
-        }
-        */
-    };
-    </script>
-    <script type="module" src="classes.js"></script>
-    <script>
-function updatePillLogs() {
-  // TODO: Customize 'YOUR_USER_NAME' as needed, or use currently logged-in user
-  fetch('/pill_logs?userName=YOUR_USER_NAME')
-    .then(response => response.json())
-    .then(logs => {
-      const el = document.getElementById('pillLogs');
-      el.innerHTML =
-        logs.length === 0
-          ? '<em>No pills logged yet.</em>'
-          : '<ul>' +
-            logs.map(log =>
-                `<li>${log.taken_at}: <b>${log.name}</b></li>`)
-            .join('') + '</ul>';
-    });
-}
-// Update every 10 seconds
-setInterval(updatePillLogs, 10000);
-updatePillLogs();
-</script>
-
-    <script type="module" src="yourScript.js">
+    <!-- Main dashboard and pill logs JS -->
+    <script type="module">
         import { Medication, Person, UserManager } from './classes.js';
 
         const apiBaseUrl = ''; // Adjust as needed
@@ -273,32 +115,28 @@ updatePillLogs();
         const addMedBtn = document.getElementById('addMedBtn');
         const medListDiv = document.getElementById('medList');
 
-        userNameInput.addEventListener('input', () => {
-  updatePillLogs();
-});
-
         function updatePillLogs() {
-  const userName = document.getElementById('userName').value.trim();
-  if (!userName) {
-    document.getElementById('pillLogs').innerHTML = '<em>Please enter or select a user to view pill logs.</em>';
-    return;
-  }
-  fetch(`/pill_logs?userName=${encodeURIComponent(userName)}`)
-    .then(response => response.json())
-    .then(logs => {
-      const el = document.getElementById('pillLogs');
-      el.innerHTML =
-        logs.length === 0
-          ? '<em>No pills logged yet for this user.</em>'
-          : '<ul>' +
-            logs.map(log =>
-                `<li>${log.taken_at}: <b>${log.name}</b></li>`)
-            .join('') + '</ul>';
-    });
-}
+            const userName = userNameInput.value.trim();
+            if (!userName) {
+                document.getElementById('pillLogs').innerHTML = '<em>Please enter or select a user to view pill logs.</em>';
+                return;
+            }
+            fetch(`/pill_logs?userName=${encodeURIComponent(userName)}`)
+                .then(response => response.json())
+                .then(logs => {
+                    const el = document.getElementById('pillLogs');
+                    el.innerHTML =
+                        logs.length === 0
+                            ? '<em>No pills logged yet for this user.</em>'
+                            : '<ul>' +
+                            logs.map(log =>
+                                `<li>${log.taken_at}: <b>${log.name}</b></li>`)
+                            .join('') + '</ul>';
+                });
+        }
 
-// Poll every 10 seconds for pill logs
-setInterval(updatePillLogs, 10000);
+        userNameInput.addEventListener('input', updatePillLogs);
+        setInterval(updatePillLogs, 10000); // Poll every 10 seconds
 
         userNameInput.addEventListener('blur', () => {
             loadAndDisplayMeds(userNameInput.value.trim());
@@ -306,7 +144,6 @@ setInterval(updatePillLogs, 10000);
 
         async function loadAndDisplayMeds(userName) {
             const medListDiv = document.getElementById('medList');
-            // Optionally, clear list before loading
             medListDiv.innerHTML = '';
             if (!userName) {
                 medListDiv.textContent = 'Please enter/select a user to view their medications.';
@@ -320,7 +157,6 @@ setInterval(updatePillLogs, 10000);
                     medListDiv.textContent = 'No medications found for this user.';
                     return;
                 }
-                // Build HTML list
                 const ul = document.createElement('ul');
                 meds.forEach(med => {
                     const li = document.createElement('li');
@@ -338,13 +174,11 @@ setInterval(updatePillLogs, 10000);
             const medName = medNameInput.value.trim();
             const freq = parseInt(frequencyInput.value, 10);
 
-            // Basic validation
             if (!userName || !medName || isNaN(freq) || freq < 1) {
                 alert('Please enter all medication info.');
                 return;
             }
 
-            // Create JS objects (optional, for JS-side userManager)
             let person = userManager.people.find(p => p.name === userName);
             if (!person) {
                 person = new Person(userName);
@@ -359,14 +193,13 @@ setInterval(updatePillLogs, 10000);
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        userName: userName, // You may want userId if users have unique IDs
+                        userName: userName,
                         name: medName,
                         frequencyPerDay: freq
                     })
                 });
                 if (!res.ok) throw new Error('Error saving medication!');
                 alert('Medication added!');
-                // med list refresher
                 await loadAndDisplayMeds(userName);
             } catch (err) {
                 alert('Failed to add medication: ' + err.message);
