@@ -1,13 +1,41 @@
 # --- Imports ---
 from flask import Flask, render_template, request, jsonify
-import sqlite3
 import datetime
 import threading
 import time
 import sys
+import json
+import os
 
-# --- Flask & DB Setup ---
+# --- Flask & "DB" Setup (JSON file) ---
 app = Flask(__name__)
+
+STATE_PATH = 'state.json'
+
+def load_state():
+    """Load entire app state from JSON file, or create a default one."""
+    if not os.path.exists(STATE_PATH):
+        state = {
+            "next_ids": {
+                "user": 1,
+                "med": 1,
+                "alarm": 1,
+                "pill_log": 1
+            },
+            "users": [],         # {id, name}
+            "medications": [],   # {id, user_id, name, frequencyPerDay, pills_left, pills_per_dose}
+            "alarms": [],        # {id, user_id, med_id, time}
+            "pill_logs": []      # {id, user_id, med_id, taken_at}
+        }
+        save_state(state)
+        return state
+    with open(STATE_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_state(state):
+    """Persist entire app state to JSON file."""
+    with open(STATE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(state, f, indent=2)
 
 # --- CORS: Manual Header if flask_cors not installed ---
 @app.after_request
@@ -16,58 +44,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     return response
-
-DB_PATH = 'pilllog.db'
-
-def db_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-# --- Set up tables automatically (idempotent/init step) ---
-def init_db():
-    conn = db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-        )
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS medications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            name TEXT,
-            frequencyPerDay INTEGER,
-            pills_left INTEGER DEFAULT 30,
-            pills_per_dose INTEGER DEFAULT 1,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS pill_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            med_id INTEGER,
-            taken_at TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(med_id) REFERENCES medications(id)
-        )
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS alarms (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            med_id INTEGER,
-            time TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(med_id) REFERENCES medications(id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
-init_db()  # <--- Ensure DB is initialized at app start
 
 # --- Platform Detection & GPIO Setup ---
 PI_AVAILABLE = False
@@ -95,12 +71,13 @@ if PI_AVAILABLE:
 
 # --- Medication/Alarm State ---
 med_alarm_active = [False] * 5
-med_alarm_context = [None] * 5 # stores alarm metadata (user_id, med_id, etc)
+med_alarm_context = [None] * 5  # stores alarm metadata (user_id, med_id, etc)
 
 def start_buzzer():
     if PI_AVAILABLE:
         for pin in BUZZER_PINS:
             GPIO.output(pin, GPIO.HIGH)
+
 def stop_buzzer():
     if PI_AVAILABLE:
         for pin in BUZZER_PINS:
@@ -115,6 +92,7 @@ def trigger_alarm(idx, user_id, med_id):
         start_buzzer()
 
 def clear_alarm(idx):
+    """When user presses button: clear alarm, log pill, decrement pills_left."""
     ctx = med_alarm_context[idx]
     print(f"--> CLEAR: Med {idx+1}, User {ctx['user_id']}, Med {ctx['med_id']}")
     med_alarm_active[idx] = False
@@ -122,18 +100,27 @@ def clear_alarm(idx):
     if PI_AVAILABLE:
         GPIO.output(LED_PINS[idx], GPIO.LOW)
         stop_buzzer()
-    # Log pill to DB
+
+    # --- Log pill & decrement pills_left in JSON "DB" ---
+    state = load_state()
     now = datetime.datetime.now().isoformat()
-    conn = db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        'INSERT INTO pill_logs (user_id, med_id, taken_at) VALUES (?, ?, ?)',
-        (ctx['user_id'], ctx['med_id'], now)
-    )
-    # Decrement pills_left for medication (by 1 per alarm event)
-    cur.execute('UPDATE medications SET pills_left = pills_left - 1 WHERE id=?', (ctx['med_id'],))
-    conn.commit()
-    conn.close()
+
+    # Find medication and decrement
+    med = next((m for m in state["medications"] if m["id"] == ctx["med_id"]), None)
+    if med:
+        med["pills_left"] = max(0, med.get("pills_left", 0) - 1)
+
+    # Add pill_log entry
+    pill_log_id = state["next_ids"]["pill_log"]
+    state["next_ids"]["pill_log"] += 1
+    state["pill_logs"].append({
+        "id": pill_log_id,
+        "user_id": ctx["user_id"],
+        "med_id": ctx["med_id"],
+        "taken_at": now
+    })
+
+    save_state(state)
 
 def button_listener():
     print("Pill button listener running for 5 medications...")
@@ -143,27 +130,28 @@ def button_listener():
                 if med_alarm_active[i] and GPIO.input(pin) == GPIO.LOW:
                     print(f"Button {i+1} pressed! Logging pill, turning off LED & buzzers...")
                     clear_alarm(i)
-                    time.sleep(1) # Debounce per button
+                    time.sleep(1)  # Debounce per button
         else:
             pressed = input("Simulate button press (enter index 1-5): ")
-            i = int(pressed) - 1
-            if med_alarm_active[i]:
-                clear_alarm(i)
+            try:
+                i = int(pressed) - 1
+                if 0 <= i < 5 and med_alarm_active[i]:
+                    clear_alarm(i)
+            except ValueError:
+                print("Invalid input.")
         time.sleep(0.05)
 
 def alarm_checker():
+    """Background thread: checks alarms and triggers them when time matches."""
     while True:
-        now = datetime.datetime.now().strftime('%H:%M')
-        conn = db_connection()
-        cur = conn.cursor()
+        now_hm = datetime.datetime.now().strftime('%H:%M')
+        state = load_state()
         # Must use separate alarms for each med/user combo
-        alarms = cur.execute('SELECT id, user_id, med_id, time FROM alarms WHERE time=?', (now,)).fetchall()
-        for alarm_row in alarms:
-            # Map the med_id (1-5) to index (0-4)
-            idx = alarm_row['med_id'] - 1
-            if 0 <= idx < 5 and not med_alarm_active[idx]:
-                trigger_alarm(idx, alarm_row['user_id'], alarm_row['med_id'])
-        conn.close()
+        for alarm_row in state["alarms"]:
+            if alarm_row["time"] == now_hm:
+                idx = alarm_row["med_id"] - 1  # Map med_id (1-5) to index (0-4)
+                if 0 <= idx < 5 and not med_alarm_active[idx]:
+                    trigger_alarm(idx, alarm_row["user_id"], alarm_row["med_id"])
         time.sleep(30)  # Check every 30 seconds
 
 # --- Flask Routes and App Startup ---
@@ -190,133 +178,165 @@ def take_pill_page():
 # --- USER API (long-term, robust) ---
 @app.route('/users', methods=['POST', 'GET'])
 def users():
-    conn = db_connection()
-    cur = conn.cursor()
+    state = load_state()
     if request.method == 'POST':
-        name = request.json.get('name')
+        data = request.json or {}
+        name = data.get('name')
         print(f"Adding user: {name}")
-        cur.execute('INSERT OR IGNORE INTO users (name) VALUES (?)', (name,))
-        conn.commit()
-        user = cur.execute('SELECT * FROM users WHERE name=?', (name,)).fetchone()
-        conn.close()
-        return jsonify({'id': user['id'], 'name': user['name']})
+        # Check if user exists
+        existing = next((u for u in state["users"] if u["name"] == name), None)
+        if existing:
+            return jsonify({'id': existing["id"], 'name': existing["name"]})
+        # Create new user
+        user_id = state["next_ids"]["user"]
+        state["next_ids"]["user"] += 1
+        user = {"id": user_id, "name": name}
+        state["users"].append(user)
+        save_state(state)
+        return jsonify({'id': user_id, 'name': name})
     else:
-        users = cur.execute('SELECT id, name FROM users').fetchall()
-        conn.close()
-        return jsonify([dict(u) for u in users])
+        return jsonify(state["users"])
 
 @app.route('/medications', methods=['POST', 'GET'])
 def medications():
-    conn = db_connection()
-    cur = conn.cursor()
+    state = load_state()
     if request.method == 'POST':
-        userName = request.json.get('userName')
-        med_name = request.json.get('name')
-        freq = request.json.get('frequencyPerDay')
-        pills_left = request.json.get('pills_left', 30)
-        pills_per_dose = request.json.get('pills_per_dose', 1)
-        user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
+        data = request.json or {}
+        userName = data.get('userName')
+        med_name = data.get('name')
+        freq = data.get('frequencyPerDay')
+        pills_left = data.get('pills_left', 30)
+        pills_per_dose = data.get('pills_per_dose', 1)
+
+        user = next((u for u in state["users"] if u["name"] == userName), None)
         if not user:
-            conn.close()
             return jsonify({'error': 'User not found'}), 404
-        user_id = user['id']
-        cur.execute(
-            'INSERT INTO medications (user_id, name, frequencyPerDay, pills_left, pills_per_dose) VALUES (?, ?, ?, ?, ?)',
-            (user_id, med_name, freq, pills_left, pills_per_dose)
-        )
-        conn.commit()
-        conn.close()
+
+        med_id = state["next_ids"]["med"]
+        state["next_ids"]["med"] += 1
+        med = {
+            "id": med_id,
+            "user_id": user["id"],
+            "name": med_name,
+            "frequencyPerDay": freq,
+            "pills_left": pills_left,
+            "pills_per_dose": pills_per_dose
+        }
+        state["medications"].append(med)
+        save_state(state)
         return jsonify({'status': 'Medication added'})
     else:
         userName = request.args.get('userName')
         if not userName:
-            conn.close()
             return jsonify([])
-        user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
+        user = next((u for u in state["users"] if u["name"] == userName), None)
         if not user:
-            conn.close()
             return jsonify([])
-        meds = cur.execute(
-            'SELECT name, frequencyPerDay, pills_left, pills_per_dose FROM medications WHERE user_id=?',
-            (user['id'],)
-        ).fetchall()
-        conn.close()
-        return jsonify([dict(m) for m in meds])
+        meds = [m for m in state["medications"] if m["user_id"] == user["id"]]
+        return jsonify(meds)
 
 @app.route('/pill_logs', methods=['GET'])
 def pill_logs():
     userName = request.args.get('userName')
-    conn = db_connection()
-    cur = conn.cursor()
-    user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
+    state = load_state()
+    user = next((u for u in state["users"] if u["name"] == userName), None)
     if not user:
-        conn.close()
         return jsonify([])
-    logs = cur.execute(
-        '''SELECT pl.taken_at, m.name 
-           FROM pill_logs pl 
-           JOIN medications m ON pl.med_id = m.id 
-           WHERE pl.user_id=? 
-           ORDER BY pl.taken_at DESC''',
-        (user['id'],)
-    ).fetchall()
-    conn.close()
-    return jsonify([dict(row) for row in logs])
+    # Join pill_logs with medications in Python
+    logs = []
+    for pl in state["pill_logs"]:
+        if pl["user_id"] == user["id"]:
+            med = next((m for m in state["medications"] if m["id"] == pl["med_id"]), None)
+            logs.append({
+                "taken_at": pl["taken_at"],
+                "name": med["name"] if med else "Unknown"
+            })
+    # Sort newest first
+    logs.sort(key=lambda x: x["taken_at"], reverse=True)
+    return jsonify(logs)
 
 @app.route('/alarms', methods=['POST', 'GET'])
 def alarms():
-    conn = db_connection()
-    cur = conn.cursor()
+    state = load_state()
     if request.method == 'POST':
-        userName = request.json.get('userName')
-        med_name = request.json.get('medName')
-        time_val = request.json.get('time')
-        user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
-        med = cur.execute('SELECT id FROM medications WHERE name=? AND user_id=?', (med_name, user['id'])).fetchone()
-        if not user or not med:
-            conn.close()
+        data = request.json or {}
+        userName = data.get('userName')
+        med_name = data.get('medName')
+        time_val = data.get('time')
+
+        if not userName or not med_name or not time_val:
+            return jsonify({'error': 'Missing userName, medName, or time'}), 400
+
+        user = next((u for u in state["users"] if u["name"] == userName), None)
+        if not user:
             return jsonify({'error': 'User or medication not found'}), 404
-        cur.execute('INSERT INTO alarms (user_id, med_id, time) VALUES (?, ?, ?)', (user['id'], med['id'], time_val))
-        conn.commit()
-        conn.close()
+
+        med = next(
+            (m for m in state["medications"] if m["name"] == med_name and m["user_id"] == user["id"]),
+            None
+        )
+        if not med:
+            return jsonify({'error': 'User or medication not found'}), 404
+
+        alarm_id = state["next_ids"]["alarm"]
+        state["next_ids"]["alarm"] += 1
+        alarm = {
+            "id": alarm_id,
+            "user_id": user["id"],
+            "med_id": med["id"],
+            "time": time_val
+        }
+        state["alarms"].append(alarm)
+        save_state(state)
         return jsonify({'status': 'Alarm added'}), 201
     else:
-        alarms = cur.execute('SELECT id, user_id, med_id, time FROM alarms').fetchall()
-        conn.close()
-        return jsonify([dict(a) for a in alarms])
+        return jsonify(state["alarms"])
 
 @app.route('/alarms/<int:alarm_id>', methods=['DELETE'])
 def delete_alarm(alarm_id):
-    conn = db_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM alarms WHERE id=?', (alarm_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'Alarm deleted'})
+    state = load_state()
+    before = len(state["alarms"])
+    state["alarms"] = [a for a in state["alarms"] if a["id"] != alarm_id]
+    after = len(state["alarms"])
+    save_state(state)
+    return jsonify({'status': 'Alarm deleted', 'removed': before - after})
 
 @app.route('/take_pill', methods=['POST', 'OPTIONS'])
 def take_pill():
     if request.method == 'OPTIONS':
         return ('', 204)
-    data = request.json
+
+    data = request.json or {}
     userName = data.get('userName')
     med_name = data.get('medName')
-    conn = db_connection()
-    cur = conn.cursor()
-    user = cur.execute('SELECT id FROM users WHERE name=?', (userName,)).fetchone()
-    med = cur.execute('SELECT id, pills_per_dose FROM medications WHERE name=? AND user_id=?', (med_name, user['id'])).fetchone()
-    if not user or not med:
-        conn.close()
+
+    state = load_state()
+    user = next((u for u in state["users"] if u["name"] == userName), None)
+    if not user:
         return jsonify({'error': 'User or medication not found'}), 404
-    pills_per_dose = med['pills_per_dose'] if 'pills_per_dose' in med.keys() else 1
-    now = datetime.datetime.now().isoformat()
-    cur.execute(
-        'INSERT INTO pill_logs (user_id, med_id, taken_at) VALUES (?, ?, ?)', 
-        (user['id'], med['id'], now)
+    med = next(
+        (m for m in state["medications"] if m["name"] == med_name and m["user_id"] == user["id"]),
+        None
     )
-    cur.execute('UPDATE medications SET pills_left = pills_left - ? WHERE id=?', (pills_per_dose, med['id']))
-    conn.commit()
-    conn.close()
+    if not med:
+        return jsonify({'error': 'User or medication not found'}), 404
+
+    pills_per_dose = med.get("pills_per_dose", 1)
+    now = datetime.datetime.now().isoformat()
+
+    # Log pill
+    pill_log_id = state["next_ids"]["pill_log"]
+    state["next_ids"]["pill_log"] += 1
+    state["pill_logs"].append({
+        "id": pill_log_id,
+        "user_id": user["id"],
+        "med_id": med["id"],
+        "taken_at": now
+    })
+    # Decrement pills_left
+    med["pills_left"] = max(0, med.get("pills_left", 0) - pills_per_dose)
+
+    save_state(state)
     return jsonify({'status': 'Pill logged', 'taken_at': now})
 
 # --- LED/Alarm endpoints (dummy: replace print with GPIO logic later) ---
@@ -341,6 +361,9 @@ def alarming_on():
     return jsonify({'status': 'Alarm triggered'})
 
 if __name__ == '__main__':
+    # Ensure state.json exists with base structure
+    _ = load_state()
+
     threading.Thread(target=button_listener, daemon=True).start()
     threading.Thread(target=alarm_checker, daemon=True).start()
     print("Starting Flask app!")

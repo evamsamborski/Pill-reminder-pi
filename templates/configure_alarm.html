@@ -49,7 +49,7 @@
     </style>
 </head>
 <body>
-    <nav class="nav-panel">
+<nav class="nav-panel">
     <a href="/testtt">Dashboard</a>
     <a href="/add_user">Add User</a>
     <a href="/configure_alarm">Configure Alarm</a>
@@ -57,40 +57,84 @@
     <a href="/take_pill">Take Pill</a>
 </nav>
 
+<div class="container">
+    <h1>Alarm Scheduler</h1>
 
-    <div class="container">
-        <h1>Alarm Scheduler</h1>
-        <label>User:
-            <select id="userDropdown" required></select>
-        </label><br>
-        <label>Time (24hr): <input type="time" id="alarmTime"></label>
-        <button id="addAlarmBtn">Add Alarm</button>
-        <h2>Scheduled Alarms</h2>
-        <ul id="alarmList"></ul>
-    </div>
+    <label>User:
+        <select id="userDropdown" required></select>
+    </label><br>
+
+    <label>Medication:
+        <select id="medDropdown" required></select>
+    </label><br>
+
+    <label>Time (24hr): <input type="time" id="alarmTime"></label>
+    <button id="addAlarmBtn">Add Alarm</button>
+
+    <h2>Scheduled Alarms</h2>
+    <ul id="alarmList"></ul>
+</div>
+
 <script>
 const apiBaseUrl = '';  // Universal Flask backend
 
-const alarmInput = document.getElementById('alarmTime');
-const addAlarmBtn = document.getElementById('addAlarmBtn');
-const alarmList = document.getElementById('alarmList');
+const alarmInput   = document.getElementById('alarmTime');
+const addAlarmBtn  = document.getElementById('addAlarmBtn');
+const alarmList    = document.getElementById('alarmList');
 const userDropdown = document.getElementById('userDropdown');
+const medDropdown  = document.getElementById('medDropdown');
 
 // Populate user dropdown at load
 async function populateUsers() {
-    const res = await fetch(`${apiBaseUrl}/users`);
-    const users = await res.json();
-    userDropdown.innerHTML = '';
-    users.forEach(user => {
-        let opt = document.createElement('option');
-        opt.value = user.name;
-        opt.text = user.name;
-        userDropdown.add(opt);
-    });
+    try {
+        const res = await fetch(`${apiBaseUrl}/users`);
+        const users = await res.json();
+        userDropdown.innerHTML = '';
+        users.forEach(user => {
+            let opt = document.createElement('option');
+            opt.value = user.name;
+            opt.text  = user.name;
+            userDropdown.add(opt);
+        });
+        // After loading users, load meds for first user (if any)
+        if (users.length > 0) {
+            await populateMedsForUser(users[0].name);
+        } else {
+            medDropdown.innerHTML = '';
+        }
+    } catch (e) {
+        console.error('Error loading users:', e);
+    }
 }
-populateUsers();
 
-// Poll every 30 seconds for any "now" alarm -- no changes
+// Populate medications for selected user
+async function populateMedsForUser(userName) {
+    try {
+        const res = await fetch(`${apiBaseUrl}/medications?userName=${encodeURIComponent(userName)}`);
+        const meds = await res.json();
+        medDropdown.innerHTML = '';
+        meds.forEach(med => {
+            let opt = document.createElement('option');
+            opt.value = med.name;
+            opt.text  = med.name;
+            medDropdown.add(opt);
+        });
+    } catch (e) {
+        console.error('Error loading medications:', e);
+    }
+}
+
+// When user changes, reload medications
+userDropdown.addEventListener('change', () => {
+    const userName = userDropdown.value;
+    if (userName) {
+        populateMedsForUser(userName);
+    } else {
+        medDropdown.innerHTML = '';
+    }
+});
+
+// Poll every 30 seconds for any "now" alarm -- existing behavior
 let lastTriggeredTime = null;
 if (window.Notification && Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -117,20 +161,26 @@ setInterval(async () => {
     }
 }, 30000);
 
+// Add alarm with user + med + time
 addAlarmBtn.onclick = async () => {
-    const time = alarmInput.value;
+    const time     = alarmInput.value;
     const userName = userDropdown.value;
+    const medName  = medDropdown.value;
+
     if (!userName) { alert('Select a user!'); return; }
-    if (!time) { alert('Choose a time!'); return; }
+    if (!medName)  { alert('Select a medication!'); return; }
+    if (!time)     { alert('Choose a time!'); return; }
+
     try {
-        console.log("Sending POST to /alarms with time:", time, "and user:", userName);
+        console.log("Sending POST to /alarms with", { userName, medName, time });
         const res = await fetch(`${apiBaseUrl}/alarms`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userName, time })
+            body: JSON.stringify({ userName, medName, time })
         });
+        const text = await res.text();
         if (!res.ok) {
-            alert('Failed to add alarm: ' + await res.text());
+            alert('Failed to add alarm: ' + text);
             return;
         }
         alarmInput.value = "";
@@ -146,7 +196,7 @@ async function loadAlarms() {
     alarmList.innerHTML = '';
     alarms.forEach(alarm => {
         const li = document.createElement('li');
-        li.textContent = `Alarm at ${alarm.time}`;
+        li.textContent = `Alarm for user ${alarm.user_id}, med ${alarm.med_id} at ${alarm.time}`;
         const btn = document.createElement('button');
         btn.textContent = 'Delete';
         btn.className = 'delete-btn';
