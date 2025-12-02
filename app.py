@@ -54,8 +54,8 @@ except ImportError:
     print("RPi.GPIO not available. Button press will be simulated.")
 
 # Assignments for 5 buttons, 5 LEDs, 2 buzzers (BCM pin numbers)
-BUTTON_PINS = [17, 27, 22, 10, 9]    # Each button for one medication
-LED_PINS = [4, 5, 6, 13, 19]         # Each LED for one medication
+BUTTON_PINS = [16, 27, 22, 10, 9]    # Each button for one medication
+LED_PINS = [12, 5, 6, 13, 19]         # Each LED for one medication
 BUZZER_PINS = [14, 15]               # Both buzzers for alarm intensity
 
 if PI_AVAILABLE:
