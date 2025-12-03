@@ -61,7 +61,8 @@ BUZZER_PINS = [14, 15]               # Both buzzers for alarm intensity
 if PI_AVAILABLE:
     GPIO.setmode(GPIO.BCM)
     for pin in BUTTON_PINS:
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        # External pull-down on breadboard: use PUD_DOWN and detect HIGH on press
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
     for pin in LED_PINS:
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)
@@ -130,10 +131,12 @@ def button_listener():
     while True:
         if PI_AVAILABLE:
             for i, pin in enumerate(BUTTON_PINS):
-                if med_alarm_active[i] and GPIO.input(pin) == GPIO.LOW:
+                # With external pull-down, button press drives pin HIGH
+                if med_alarm_active[i] and GPIO.input(pin) == GPIO.HIGH:
                     print(f"Button {i+1} pressed! Logging pill, turning off LED & buzzers...")
                     clear_alarm(i)
                     time.sleep(1)  # Debounce per button
+
         else:
             pressed = input("Simulate button press (enter index 1-5): ")
             try:
