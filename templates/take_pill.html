@@ -178,6 +178,23 @@ document.getElementById('pillForm').onsubmit = async function(event) {
         await populateMeds(userName);
         medDropdown.value = medName; // Preserve selection
         await refreshStatusAndLogs(userName, medName);
+
+        // Refill warning when pills_left - pills_per_dose == 0 (one dose left before this dose)
+        try {
+            const medsRes = await fetch(`${apiBaseUrl}/medications?userName=${encodeURIComponent(userName)}`);
+            const meds = await medsRes.json();
+            const med = meds.find(m => m.name === medName);
+            if (med) {
+                const pillsLeft = med.pills_left;
+                const pillsPerDose = med.pills_per_dose || 1;
+                if (pillsLeft === pillsPerDose) {
+                    alert(`Warning: Only one dose left of ${medName}. Time to refill.`);
+                }
+            }
+        } catch (e) {
+            console.error('Refill warning check failed:', e);
+        }
+
     } catch (err) {
         pillStatus.textContent = 'Error: ' + err.message;
     }
