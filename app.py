@@ -374,6 +374,11 @@ def alarming_on():
     print('ALARM ON')
     return jsonify({'status': 'Alarm triggered'})
 
+def cleanup_gpio():
+    if PI_AVAILABLE:
+        print("Cleaning up GPIO...")
+        GPIO.cleanup()
+
 if __name__ == '__main__':
     # Ensure state.json exists with base structure
     _ = load_state()
@@ -381,4 +386,8 @@ if __name__ == '__main__':
     threading.Thread(target=button_listener, daemon=True).start()
     threading.Thread(target=alarm_checker, daemon=True).start()
     print("Starting Flask app!")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=True)
+    finally:
+        cleanup_gpio()
+
