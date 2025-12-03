@@ -90,7 +90,8 @@ def trigger_alarm(idx, user_id, med_id):
     med_alarm_active[idx] = True
     med_alarm_context[idx] = {'user_id': user_id, 'med_id': med_id}
     if PI_AVAILABLE:
-        GPIO.output(LED_PINS[idx], GPIO.HIGH)
+        #GPIO.output(LED_PINS[idx], GPIO.HIGH)
+        GPIO.output(12, GPIO.HIGH)
         start_buzzer()
 
 def clear_alarm(idx):
