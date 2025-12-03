@@ -73,6 +73,9 @@
 
     <h2>Scheduled Alarms</h2>
     <ul id="alarmList"></ul>
+
+    <!-- Status area for hardware events -->
+    <div id="alarmStatus" style="margin-top:10px; color:green; font-weight:bold;"></div>
 </div>
 
 <script>
@@ -209,9 +212,26 @@ async function loadAlarms() {
     });
 }
 
+// Poll hardware alarm status every 2 seconds for debugging
+async function pollAlarmStatus() {
+    try {
+        const res = await fetch(`${apiBaseUrl}/alarm_status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const statusDiv = document.getElementById('alarmStatus');
+        if (data.just_cleared) {
+            statusDiv.textContent = "Button pressed: alarm stopped";
+            setTimeout(() => { statusDiv.textContent = ""; }, 5000);
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
 window.onload = function() {
     populateUsers();
     loadAlarms();
+    setInterval(pollAlarmStatus, 2000);
 };
 </script>
 </body>

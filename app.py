@@ -55,7 +55,7 @@ except ImportError:
 
 # Assignments for 5 buttons, 5 LEDs, 2 buzzers (BCM pin numbers)
 BUTTON_PINS = [16, 27, 22, 10, 9]    # Each button for one medication
-LED_PINS = [12, 5, 6, 13, 19]         # Each LED for one medication
+LED_PINS    = [12, 5, 6, 13, 19]     # Each LED for one medication
 BUZZER_PINS = [14, 15]               # Both buzzers for alarm intensity
 
 if PI_AVAILABLE:
@@ -70,8 +70,9 @@ if PI_AVAILABLE:
         GPIO.output(pin, GPIO.LOW)  # Make sure both buzzers are OFF at boot
 
 # --- Medication/Alarm State ---
-med_alarm_active = [False] * 5
+med_alarm_active  = [False] * 5
 med_alarm_context = [None] * 5  # stores alarm metadata (user_id, med_id, etc)
+last_alarm_cleared = False      # debug flag for UI
 
 def start_buzzer():
     if PI_AVAILABLE:
@@ -93,10 +94,12 @@ def trigger_alarm(idx, user_id, med_id):
 
 def clear_alarm(idx):
     """When user presses button: clear alarm, log pill, decrement pills_left."""
+    global last_alarm_cleared
     ctx = med_alarm_context[idx]
     print(f"--> CLEAR: Med {idx+1}, User {ctx['user_id']}, Med {ctx['med_id']}")
-    med_alarm_active[idx] = False
+    med_alarm_active[idx]  = False
     med_alarm_context[idx] = None
+    last_alarm_cleared     = True
     if PI_AVAILABLE:
         GPIO.output(LED_PINS[idx], GPIO.LOW)
         stop_buzzer()
@@ -338,6 +341,14 @@ def take_pill():
 
     save_state(state)
     return jsonify({'status': 'Pill logged', 'taken_at': now})
+
+# --- Debug: hardware alarm status for UI ---
+@app.route('/alarm_status', methods=['GET'])
+def alarm_status():
+    global last_alarm_cleared
+    status = {'just_cleared': last_alarm_cleared}
+    last_alarm_cleared = False
+    return jsonify(status)
 
 # --- LED/Alarm endpoints (dummy: replace print with GPIO logic later) ---
 @app.route('/led/on', methods=['GET'])
