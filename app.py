@@ -207,7 +207,12 @@ def users():
 @app.route('/medications', methods=['POST', 'GET'])
 def medications():
     state = load_state()
+
     if request.method == 'POST':
+        # Enforce a maximum of 5 medications total
+        if len(state["medications"]) >= 5:
+            return jsonify({'error': 'Maximum of 5 medications supported by hardware'}), 400
+
         data = request.json or {}
         userName = data.get('userName')
         med_name = data.get('name')
@@ -221,6 +226,7 @@ def medications():
 
         med_id = state["next_ids"]["med"]
         state["next_ids"]["med"] += 1
+
         med = {
             "id": med_id,
             "user_id": user["id"],
@@ -231,7 +237,7 @@ def medications():
         }
         state["medications"].append(med)
         save_state(state)
-        return jsonify({'status': 'Medication added'})
+        return jsonify({'status': 'Medication added'}), 201
     else:
         userName = request.args.get('userName')
         if not userName:
