@@ -7,8 +7,10 @@ import sys
 import json
 import os
 
+
 # --- Flask & "DB" Setup (JSON file) ---
 app = Flask(__name__)
+
 
 STATE_PATH = 'state.json'
 
@@ -83,19 +85,29 @@ try:
 except ImportError:
     print("RPi.GPIO not available. Button press will be simulated.")
 
+
 # Assignments for 5 buttons, 5 LEDs, 2 buzzers (BCM pin numbers)
-BUTTON_PINS = [16, 27, 22, 10, 9]    # Each button for one medication
-LED_PINS    = [12, 5, 6, 13, 19]     # Each LED for one medication
-BUZZER_PINS = [14, 15]               # Both buzzers for alarm intensity
+# Buttons: 1–5
+BUTTON_PINS = [21, 16, 1, 7, 8]      # Meds 1–5
+
+# LEDs: 1–5
+LED_PINS    = [26, 19, 13, 6, 5]     # Meds 1–5
+
+# Buzzers (both buzzers for any alarm)
+BUZZER_PINS = [14, 15]
 
 if PI_AVAILABLE:
     GPIO.setmode(GPIO.BCM)
+    # Buttons: inputs only, external resistors handle pull-down / pull-up
     for pin in BUTTON_PINS:
-        # External resistors handle pull; simple input
         GPIO.setup(pin, GPIO.IN)
+
+    # LEDs: outputs, start OFF
     for pin in LED_PINS:
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)
+
+    # Buzzers: outputs, start OFF
     for pin in BUZZER_PINS:
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)  # Make sure both buzzers are OFF at boot
@@ -181,9 +193,10 @@ def button_listener():
     while True:
         if PI_AVAILABLE:
             for i, pin in enumerate(BUTTON_PINS):
-                # With external resistors, assume button press drives pin HIGH
+                # Interpret your external resistor wiring:
+                # adjust this condition if your pressed state is HIGH instead of LOW.
                 buttonstate = GPIO.input(pin)
-                if med_alarm_active[i] and buttonstate == GPIO.HIGH:
+                if med_alarm_active[i] and buttonstate == GPIO.LOW:
                     print(f"Button {i+1} pressed! Clearing alarm for slot {i+1}")
                     clear_alarm(i)
         else:
