@@ -11,7 +11,6 @@ import os
 # --- Flask & "DB" Setup (JSON file) ---
 app = Flask(__name__)
 
-
 STATE_PATH = 'state.json'
 
 
@@ -67,6 +66,17 @@ def assign_med_slot(med_id):
             return i
     return None  # All slots full
 
+def remove_alarms_for_med(user_id, med_id):
+    """Remove all alarms in state for this user/med combination."""
+    state = load_state()
+    original_count = len(state["alarms"])
+    state["alarms"] = [
+        a for a in state["alarms"]
+        if not (a["user_id"] == user_id and a["med_id"] == med_id)
+    ]
+    if len(state["alarms"]) != original_count:
+        print(f"Removed {original_count - len(state['alarms'])} alarm(s) for user {user_id}, med {med_id}")
+    save_state(state)
 
 # --- CORS: Manual Header if flask_cors not installed ---
 @app.after_request
@@ -129,6 +139,7 @@ def stop_buzzer():
         for pin in BUZZER_PINS:
             GPIO.output(pin, GPIO.LOW)
 
+
 def trigger_alarm(slot_idx, user_id, med_id):
     """Trigger alarm for a specific slot (0-4)."""
     if not (0 <= slot_idx < 5):
@@ -140,9 +151,10 @@ def trigger_alarm(slot_idx, user_id, med_id):
     med_alarm_context[slot_idx] = {'user_id': user_id, 'med_id': med_id}
 
     if PI_AVAILABLE:
+        # Turn on that LED and start buzzer (no sum() logic)
         GPIO.output(LED_PINS[slot_idx], GPIO.HIGH)
-        if sum(med_alarm_active) == 1:
-            start_buzzer()
+        start_buzzer()
+
 
 def clear_alarm(slot_idx):
     """When user presses button: clear alarm, log pill, decrement pills_left."""
@@ -182,20 +194,36 @@ def clear_alarm(slot_idx):
 
     save_state(state)
 
+    # Remove alarm(s) for this user/med so it won't retrigger this minute
+    remove_alarms_for_med(ctx["user_id"], ctx["med_id"])
 
 def button_listener():
     """Monitor buttons and clear alarms when pressed."""
     print("Pill button listener running for 5 medications...")
 
+    # Last known state per button, for edge detection
+    last_state = [None] * len(BUTTON_PINS)
+
     while True:
         if PI_AVAILABLE:
             for i, pin in enumerate(BUTTON_PINS):
-                # Interpret your external resistor wiring:
-                # adjust this condition if your pressed state is HIGH instead of LOW.
                 buttonstate = GPIO.input(pin)
-                if med_alarm_active[i] and buttonstate == GPIO.LOW:
+
+                # Initialize last_state on first loop
+                if last_state[i] is None:
+                    last_state[i] = buttonstate
+                    continue
+
+                # Treat a press as a HIGH -> LOW transition while alarm is active
+                if (
+                    med_alarm_active[i]
+                    and last_state[i] == GPIO.HIGH
+                    and buttonstate == GPIO.LOW
+                ):
                     print(f"Button {i+1} pressed! Clearing alarm for slot {i+1}")
                     clear_alarm(i)
+
+                last_state[i] = buttonstate
         else:
             # Simulation mode
             try:
@@ -237,7 +265,6 @@ def alarm_checker():
                     trigger_alarm(slot_idx, alarm_row["user_id"], med_id)
 
         time.sleep(30)  # Check every 30 seconds
-
 
 
 # --- Flask Routes and App Startup ---
