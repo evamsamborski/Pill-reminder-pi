@@ -129,7 +129,6 @@ def stop_buzzer():
         for pin in BUZZER_PINS:
             GPIO.output(pin, GPIO.LOW)
 
-
 def trigger_alarm(slot_idx, user_id, med_id):
     """Trigger alarm for a specific slot (0-4)."""
     if not (0 <= slot_idx < 5):
@@ -142,10 +141,8 @@ def trigger_alarm(slot_idx, user_id, med_id):
 
     if PI_AVAILABLE:
         GPIO.output(LED_PINS[slot_idx], GPIO.HIGH)
-        # Only turn on buzzer if this is the first active alarm
         if sum(med_alarm_active) == 1:
             start_buzzer()
-
 
 def clear_alarm(slot_idx):
     """When user presses button: clear alarm, log pill, decrement pills_left."""
@@ -223,21 +220,24 @@ def alarm_checker():
     while True:
         now_hm = datetime.datetime.now().strftime('%H:%M')
         state = load_state()
+        print("now_hm:", now_hm, "alarms:", state["alarms"])  # DEBUG
 
         for alarm_row in state["alarms"]:
+            print(" checking alarm:", alarm_row)              # DEBUG
             if alarm_row["time"] == now_hm:
                 med_id = alarm_row["med_id"]
                 slot_idx = get_med_slot(med_id)
+                print("  match; med_id:", med_id, "slot_idx:", slot_idx)  # DEBUG
 
                 if slot_idx is None:
                     print(f"WARNING: Medication {med_id} not assigned to any slot!")
                     continue
 
-                # Only trigger if alarm not already active for this slot
                 if not med_alarm_active[slot_idx]:
                     trigger_alarm(slot_idx, alarm_row["user_id"], med_id)
 
         time.sleep(30)  # Check every 30 seconds
+
 
 
 # --- Flask Routes and App Startup ---
